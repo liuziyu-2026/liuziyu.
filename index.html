@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Global Storm Tracker Pro</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-velocity/1.2.4/leaflet-velocity.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; font-family: system-ui, -apple-system, sans-serif; background: #0a0e14; color: #e6edf3; overflow: hidden; }
+  #map { position: absolute; inset: 0; z-index: 1; background: #0a0e14; }
+  /* 优化云图观感，加深对比度去灰 */
+  .leaflet-tile-pane { filter: contrast(1.1) brightness(0.95) saturate(1.2); }
+  
+  .ui-layer { position: absolute; inset: 0; pointer-events: none; z-index: 1000; transition: opacity .2s; }
+  .ui-layer > * { pointer-events: auto; }
+  .ui-layer.hidden { opacity: 0; pointer-events: none; }
+  .ui-layer.hidden > * { pointer-events: none; }
+  .top-bar { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .brand { background: rgba(13,20,30,.92); backdrop-filter: blur(8px); padding: 8px 14px; border-radius: 10px; border: 1px solid #263244; font-weight: 700; font-size: 14px; color: #fff; white-space: nowrap; }
+  .brand span { color: #58a6ff; }
+  .btn { background: rgba(13,20,30,.92); backdrop-filter: blur(8px); border: 1px solid #263244; color: #e6edf3; padding: 7px 11px; border-radius: 8px; cursor: pointer; font-size: 12px; white-space: nowrap; transition: .15s; }
+  .btn:hover { background: #1c2633; border-color: #58a6ff; }
+  .panel { position: absolute; top: 72px; right: 12px; width: 300px; max-height: calc(100% - 200px); overflow-y: auto; background: rgba(13,20,30,.95); backdrop-filter: blur(12px); border: 1px solid #263244; border-radius: 12px; padding: 14px; display: none; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+  .panel.open { display: block; }
+  .panel h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #8b949e; margin: 12px 0 8px; }
+  .panel h4:first-child { margin-top: 0; }
+  .layer-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; font-size: 13px; }
+  .layer-row label { display: flex; align-items: center; gap: 7px; cursor: pointer; }
+  input[type="checkbox"] { accent-color: #58a6ff; width: 15px; height: 15px; }
+  .timeline-bar { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); width: min(760px, calc(100% - 24px)); background: rgba(13,20,30,.95); backdrop-filter: blur(12px); border: 1px solid #263244; border-radius: 14px; padding: 12px 16px; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+  .timeline-labels { display: flex; justify-content: space-between; font-size: 11px; color: #8b949e; margin-bottom: 6px; }
+  .timeline-labels .now-label { color: #58a6ff; font-weight: 600; }
+  #timeSlider { width: 100%; accent-color: #58a6ff; cursor: pointer; touch-action: manipulation; height: 20px; }
+  .timeline-controls { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+  .timeline-controls .btn { padding: 5px 10px; font-size: 11px; }
+  .frame-tag { font-size: 11px; color: #e6edf3; background: #1c2633; border: 1px solid #263244; padding: 3px 8px; border-radius: 6px; margin-left: auto; }
+  .storm-card { position: absolute; bottom: 140px; left: 12px; width: 300px; max-height: 45%; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+  .storm-item { background: rgba(13,20,30,.95); backdrop-filter: blur(12px); border: 1px solid #263244; border-radius: 10px; padding: 10px 12px; cursor: pointer; border-left: 3px solid #8b949e; transition: .15s; }
+  .storm-item:hover { background: #131b26; }
+  .storm-item .name { font-weight: 700; font-size: 13px; }
+  .storm-item .meta { font-size: 11px; color: #8b949e; margin-top: 3px; }
+  .storm-item .wind { font-size: 12px; color: #e6edf3; margin-top: 4px; }
+  .storm-item .wind b { color: #58a6ff; }
+  .leaflet-popup-content-wrapper { background: #0d141e; color: #e6edf3; border-radius: 10px; border: 1px solid #263244; }
+  .leaflet-popup-tip { background: #0d141e; }
+  .popup-inner { font-size: 12px; line-height: 1.6; min-width: 190px; }
+  .popup-inner strong { color: #58a6ff; }
+  .cat-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-size: 11px; font-weight: 700; margin-left: 6px; }
+  #toast { position: absolute; top: 72px; left: 50%; transform: translateX(-50%); background: #1f6feb; color: #fff; padding: 8px 18px; border-radius: 8px; font-size: 12px; display: none; z-index: 3000; }
+  #loading { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); background: rgba(13,20,30,.9); padding: 14px 24px; border-radius: 10px; border: 1px solid #263244; font-size: 13px; display: none; z-index: 2000; }
+  .legend { position: absolute; right: 12px; bottom: 140px; background: rgba(13,20,30,.9); backdrop-filter: blur(8px); border: 1px solid #263244; border-radius: 10px; padding: 10px 12px; font-size: 10px; display: none; }
+  .legend.open { display: block; }
+  .legend-row { display: flex; align-items: center; gap: 7px; margin: 3px 0; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  @media (max-width: 680px) {
+    .storm-card { width: calc(100% - 24px); bottom: 130px; max-height: 30%; }
+    .panel { width: calc(100% - 24px); right: 12px; }
+    .brand { font-size: 12px; padding: 6px 10px; }
+    .timeline-bar { padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div class="ui-layer" id="uiLayer">
+  <div class="top-bar">
+    <div class="brand">🌍 <span>Global</span> Storm Tracker Pro</div>
+    <button class="btn" id="layersBtn">🗂️ 叠加层</button>
+    <button class="btn" id="legendBtn">🎨 图例</button>
+    <button class="btn" id="historyBtn">🔍 历史检索</button>
+    <button class="btn" id="refreshBtn">⟳ 刷新</button>
+    <button class="btn" id="locateBtn">📍 定位</button>
+    <button class="btn" id="hideUiBtn" style="margin-left:auto;">👁️ 隐藏</button>
+  </div>
+
+  <div class="panel" id="layersPanel">
+    <h4>卫星云图系统</h4>
+    <div class="layer-row"><label><input type="checkbox" id="satChk" checked> 全球无缝云图</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="himawariChk"> 向日葵8号 (西太平洋)</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="goesChk"> GOES系列 (美/非地区)</label></div>
+    <h4>降水与环境场</h4>
+    <div class="layer-row"><label><input type="checkbox" id="radarChk" checked> 全球降水雷达</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="windChk"> 实时风场动画</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="fireChk"> 活跃热异常火点</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="tempChk"> 全球气温分布</label></div>
+    <h4>气旋显示</h4>
+    <div class="layer-row"><label><input type="checkbox" id="coneChk" checked> 概率不确定性圈</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="trackChk" checked> 历史实况路径</label></div>
+    <div class="layer-row"><label><input type="checkbox" id="spaghettiChk" checked> 多机构集合预报 (面条图)</label></div>
+  </div>
+
+  <div class="legend" id="legendPanel">
+    <div style="font-weight:700;margin-bottom:6px;font-size:11px;">气旋强度颜色</div>
+    <div class="legend-row"><span class="dot" style="background:#8b949e"></span> 热带扰动 / 低压</div>
+    <div class="legend-row"><span class="dot" style="background:#3fb950"></span> 热带风暴 / 亚热带风暴</div>
+    <div class="legend-row"><span class="dot" style="background:#e3b341"></span> 强热带风暴</div>
+    <div class="legend-row"><span class="dot" style="background:#ff9e64"></span> 台风 / 一级飓风</div>
+    <div class="legend-row"><span class="dot" style="background:#d2a8ff"></span> 强台风 / 二级飓风</div>
+    <div class="legend-row"><span class="dot" style="background:#ff4d4f"></span> 超强台风 / 强飓风</div>
+    <div style="font-weight:700;margin:8px 0 4px;font-size:11px;">概率不确定圈</div>
+    <div class="legend-row"><span class="dot" style="background:#3fb950;border-radius:50%"></span> 高概率 (≥80%)</div>
+    <div class="legend-row"><span class="dot" style="background:#d29922;border-radius:50%"></span> 中等概率 (50%–75%)</div>
+    <div class="legend-row"><span class="dot" style="background:#f85149;border-radius:50%"></span> 较低概率 (&lt;50%)</div>
+  </div>
+
+  <div class="storm-card" id="stormCards"></div>
+
+  <div class="timeline-bar">
+    <div class="timeline-labels"><span>过去</span><span class="now-label">现在</span><span>未来</span></div>
+    <input type="range" id="timeSlider" min="0" max="0" value="0">
+    <div class="timeline-controls">
+      <button class="btn" id="tlPlay">▶ 播放</button>
+      <button class="btn" id="tlReset">⟲ 回到现在</button>
+      <span class="frame-tag" id="frameTag">—</span>
+    </div>
+  </div>
+</div>
+
+<button class="btn" id="showUiBtn" style="position:absolute; top:12px; left:12px; z-index:2000; display:none; background:rgba(13,20,30,.92);">👁️ 显示</button>
+
+<div id="toast"></div>
+<div id="loading">正在拉取真实全球气象数据…</div>
+
+<script>
+window.onerror = function(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = "⚠️ 提示: " + msg;
+  el.style.display = 'block'; el.style.background = '#f85149';
+  setTimeout(() => { el.style.display = 'none'; el.style.background = '#1f6feb'; }, 4000);
+  return false;
+};
+
+const REFRESH_MS = 15 * 60 * 1000;
+const STATE = { storms: [], radarFrames: [], radarIndex: 0, playing: false, playTimer: null, refreshTimer: null, layers: {}, stormLayers: L.layerGroup(), spaghettiLayers: L.layerGroup() };
+
+const map = L.map('map', { center: [20, 0], zoom: 2, minZoom: 1, maxZoom: 8, zoomControl: false, worldCopyJump: true });
+L.control.zoom({ position: 'bottomright' }).addTo(map);
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { attribution: 'Tiles &copy; Esri' }).addTo(map);
+
+STATE.stormLayers.addTo(map);
+STATE.spaghettiLayers.addTo(map);
+
+// ---------- 卫星云图 ----------
+const GIBS_WMS = 'https://gibs.earthdata.nasa.gov/wms/epsg3857/best/wms.cgi';
+const today = new Date().toISOString().split('T')[0];
+
+STATE.layers.satGlobal = L.tileLayer.wms(GIBS_WMS, { layers: 'VIIRS_SNPP_CorrectedReflectance_TrueColor', format: 'image/jpeg', transparent: false, opacity: 0.65, time: today, attribution: 'NASA GIBS' }).addTo(map);
+STATE.layers.himawari = L.tileLayer.wms(GIBS_WMS, { layers: 'Himawari_AHI_Band3_Red_Visible_1km', format: 'image/jpeg', transparent: true, opacity: 0.8, time: today, attribution: 'JMA' });
+STATE.layers.goes = L.tileLayer.wms(GIBS_WMS, { layers: 'GOES-East_ABI_Band2_Red_Visible_1km', format: 'image/jpeg', transparent: true, opacity: 0.8, time: today, attribution: 'NOAA' });
+
+STATE.layers.radar = L.tileLayer('', { opacity: 0.55, maxNativeZoom: 7, maxZoom: 10, attribution: 'RainViewer' }).addTo(map);
+STATE.layers.fires = L.tileLayer.wms(GIBS_WMS, { layers: 'VIIRS_SNPP_Thermal_Anomalies_375m_All', format: 'image/png', transparent: true, opacity: 0.85, time: today });
+STATE.layers.temperature = L.tileLayer.wms(GIBS_WMS, { layers: 'MERRA2_2m_Air_Temperature_Monthly', format: 'image/png', transparent: true, opacity: 0.35 });
+
+// ---------- 工具函数 ----------
+function toast(msg, ms = 2600) { const el = document.getElementById('toast'); el.textContent = msg; el.style.display = 'block'; clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', ms); }
+function setLoading(on) { document.getElementById('loading').style.display = on ? 'block' : 'none'; }
+function fmtWind(kmh) { return !kmh ? '—' : `${Math.round(kmh)} km/h (${Math.round(kmh / 1.852)} kt)`; }
+
+function intensityInfo(windKmh, isSubtropical) {
+  if (!windKmh || windKmh < 34) return { color: '#8b949e', label: '热带扰动', short: 'INV' };
+  if (windKmh < 63) return { color: '#58a6ff', label: '热带低压', short: 'TD' };
+  if (windKmh < 88) return { color: '#3fb950', label: isSubtropical ? '亚热带风暴' : '热带风暴', short: isSubtropical ? 'SS' : 'TS' };
+  if (windKmh < 118) return { color: '#e3b341', label: '强热带风暴', short: 'STS' };
+  if (windKmh < 150) return { color: '#ff9e64', label: '台风 / 一级飓风', short: 'TY / H1' };
+  if (windKmh < 185) return { color: '#d2a8ff', label: '强台风 / 二级飓风', short: 'STY / H2' };
+  return { color: '#ff4d4f', label: '超强台风 / 强飓风', short: 'SuperTY / H4+' };
+}
+function probColor(prob) { return prob >= 0.8 ? '#3fb950' : prob >= 0.5 ? '#d29922' : '#f85149'; }
+function estimatedProb(hour) { return hour <= 12 ? 0.9 : hour <= 24 ? 0.82 : hour <= 36 ? 0.7 : hour <= 48 ? 0.6 : hour <= 72 ? 0.45 : 0.25; }
+
+function stormPopup(storm, point, extra) {
+  const w = point.windKmh || storm.windKmh || 0; const info = intensityInfo(w, storm.isSubtropical); const cat = storm.category || info.short;
+  return `<div class="popup-inner"><strong>${storm.name || '未命名'}</strong><span class="cat-badge" style="background:${info.color}22;color:${info.color};border:1px solid ${info.color}">${cat}</span><br>位置：${point.lat.toFixed(2)}°, ${point.lon.toFixed(2)}°<br>风速：<strong>${fmtWind(w)}</strong>${point.time ? `<br>时间：${new Date(point.time).toLocaleString()}` : ''}${extra || ''}</div>`;
+}
+
+// ---------- 雷达与云图时间轴联动 ----------
+async function loadRadarFrames() {
+  try {
+    const json = await fetch('https://api.rainviewer.com/public/weather-maps.json').then(r => r.json());
+    const host = json.host;
+    const past = (json.radar.past || []).map(f => ({ ...f, type: 'past', host }));
+    const nowcast = (json.radar.nowcast || []).map(f => ({ ...f, type: 'nowcast', host }));
+    STATE.radarFrames = [...past, ...nowcast];
+    if (STATE.radarFrames.length) { const nowIdx = Math.max(0, past.length - 1); STATE.radarIndex = nowIdx; updateRadarFrame(nowIdx); setupTimeline(); }
+  } catch (e) { console.warn('雷达加载失败', e); }
+}
+
+function updateRadarFrame(idx) {
+  const f = STATE.radarFrames[idx]; if (!f) return;
+  STATE.layers.radar.setUrl(`${f.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`);
+  
+  // 时间联动
+  const dateStr = new Date(f.time * 1000).toISOString().split('T')[0];
+  if (STATE.layers.himawari) STATE.layers.himawari.setParams({ time: dateStr });
+  if (STATE.layers.goes) STATE.layers.goes.setParams({ time: dateStr });
+  
+  document.getElementById('frameTag').textContent = f.type === 'past' ? `过去 ${Math.abs(Math.round((f.time * 1000 - Date.now()) / 60000))} 分钟` : `预报 +${Math.round((f.time * 1000 - Date.now()) / 60000)} 分钟`;
+}
+
+function setupTimeline() {
+  const s = document.getElementById('timeSlider'); s.max = STATE.radarFrames.length - 1; s.value = STATE.radarIndex;
+  s.oninput = () => { STATE.radarIndex = parseInt(s.value); updateRadarFrame(STATE.radarIndex); };
+}
+function togglePlay() {
+  STATE.playing = !STATE.playing; const btn = document.getElementById('tlPlay'); btn.textContent = STATE.playing ? '⏸ 暂停' : '▶ 播放';
+  if (STATE.playing) { STATE.playTimer = setInterval(() => { if (!STATE.radarFrames.length) return; STATE.radarIndex = (STATE.radarIndex + 1) % STATE.radarFrames.length; document.getElementById('timeSlider').value = STATE.radarIndex; updateRadarFrame(STATE.radarIndex); }, 900); } else { clearInterval(STATE.playTimer); }
+}
+
+// ---------- 真实气旋数据 (彻底删除假数据) ----------
+async function loadStorms() {
+  setLoading(true); let results = [];
+
+  // 1. 西北太平洋及全球活跃气旋接口
+  try {
+    const tw = await fetch('https://taifengshuo.com/api/typhoons', { cache: 'no-store' }).then(r => r.json());
+    (Array.isArray(tw) ? tw : (tw.data || [])).forEach(t => {
+      if (!t.points || !t.points.length) return;
+      const pts = t.points.map(p => ({ lat: +p.lat, lon: +p.lng, windKmh: (p.power || 0), time: p.time }));
+      const latest = pts[pts.length - 1];
+      
+      const forecasts = [];
+      if (t.forecasts) {
+        Object.keys(t.forecasts).forEach(agency => {
+          const track = t.forecasts[agency];
+          if (Array.isArray(track) && track.length > 1) {
+            forecasts.push({ agency, points: track.map(p => ({ lat: +p.lat, lon: +p.lng, windKmh: p.power || latest.windKmh })) });
+          }
+        });
+      }
+
+      results.push({
+        id: 'tw-' + (t.code || t.name), name: t.name || t.enname || 'UNNAMED', source: 'CMA / JTWC',
+        lat: latest.lat, lon: latest.lon, windKmh: latest.windKmh, category: 'TY',
+        isSubtropical: false, track: pts, forecast: forecasts[0]?.points || [],
+        multiForecasts: forecasts
+      });
+    });
+  } catch (e) { console.warn('西北太平洋气旋真实数据被拦截'); }
+
+  // 2. 全球其他区域 (NHC + GDACS)
+  try {
+    const nhc = await fetch('https://www.nhc.noaa.gov/CurrentStorms.json', { cache: 'no-store' }).then(r => r.json());
+    (nhc.activeStorms || []).forEach(s => {
+      const lat = s.lat ?? s.latitude; const lon = s.lon ?? s.longitude; if (lat == null || lon == null) return;
+      results.push({ id: 'nhc-' + (s.id || s.name), name: s.name || 'UNNAMED', source: 'NHC', lat: +lat, lon: +lon, windKmh: (s.intensity || s.wind || 0) * 1.852, category: s.classification || '', isSubtropical: /ST|SS/i.test(s.classification || ''), track: [], forecast: [] });
+    });
+  } catch (e) { console.warn('NHC 加载失败'); }
+
+  try {
+    const gdacs = await fetch('https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=TC', { cache: 'no-store' }).then(r => r.json());
+    (gdacs.features || []).forEach(f => {
+      const p = f.properties || {}; if (p.eventtype !== 'TC' || p.iscurrent !== 'true') return;
+      const coords = f.geometry?.coordinates; if (!coords) return;
+      results.push({
+        id: 'gdacs-' + (p.eventid || Math.random()), name: (p.eventname || p.name || 'TC').replace(/-?\d{2}$/, ''),
+        source: 'GDACS', lat: +coords[1], lon: +coords[0], windKmh: p.severitydata?.severity || 0,
+        category: p.alertlevel || '', isSubtropical: /temperate|extra|温带/i.test(p.description || p.name || ''),
+        track: [], forecast: [], multiForecasts: []
+      });
+    });
+  } catch (e) { console.warn('GDACS 加载失败'); }
+
+  STATE.storms = results; drawStorms(); renderStormCards(); setLoading(false);
+  
+  if (results.length > 0) {
+    toast(`已追踪 ${results.length} 个真实活跃气旋`, 2000);
+  } else {
+    toast('未能获取气旋数据 (本地跨域限制，请上 GitHub 测试)', 4000);
+  }
+}
+
+function drawStorms() {
+  STATE.stormLayers.clearLayers(); STATE.spaghettiLayers.clearLayers();
+  STATE.storms.forEach(storm => {
+    if (storm.track.length > 1 && document.getElementById('trackChk').checked) {
+      L.polyline(storm.track.map(p => [p.lat, p.lon]), { color: '#8b949e', weight: 2, opacity: 0.7, dashArray: '4 6' }).addTo(STATE.stormLayers);
+    }
+
+    const allPoints = [...storm.track.map(p => ({ ...p, _kind: 'history' })), { lat: storm.lat, lon: storm.lon, windKmh: storm.windKmh, _kind: 'current' }];
+    allPoints.forEach(pt => {
+      const info = intensityInfo(pt.windKmh || storm.windKmh, storm.isSubtropical);
+      L.circleMarker([pt.lat, pt.lon], { radius: pt._kind === 'current' ? 9 : 5, color: '#fff', weight: 1.5, fillColor: info.color, fillOpacity: 0.95 }).bindPopup(stormPopup(storm, pt)).addTo(STATE.stormLayers);
+    });
+
+    if (storm.forecast && storm.forecast.length > 0) {
+      L.polyline(storm.forecast.map(p => [p.lat, p.lon]), { color: '#58a6ff', weight: 2, dashArray: '5 5' }).addTo(STATE.stormLayers);
+      if (document.getElementById('coneChk').checked) {
+        storm.forecast.forEach((pt, i) => {
+          const hour = (i + 1) * 12; const prob = estimatedProb(hour); const color = probColor(prob);
+          L.circle([pt.lat, pt.lon], { radius: (80 + hour * 3.2) * 1000, color, weight: 2, opacity: 0.9, fillColor: color, fillOpacity: 0.08 }).addTo(STATE.stormLayers);
+        });
+      }
+    }
+
+    if (document.getElementById('spaghettiChk').checked && storm.multiForecasts && storm.multiForecasts.length > 0) {
+      const colors = ['#a371f7', '#f0883e', '#3fb950', '#f85149', '#58a6ff'];
+      storm.multiForecasts.forEach((fc, idx) => {
+        if (fc.points.length > 1) {
+          L.polyline([[storm.lat, storm.lon], ...fc.points.map(p => [p.lat, p.lon])], {
+            color: colors[idx % colors.length], weight: 1.5, opacity: 0.6, dashArray: '2 5'
+          }).addTo(STATE.spaghettiLayers);
+        }
+      });
+    }
+  });
+}
+
+function renderStormCards() {
+  const wrap = document.getElementById('stormCards');
+  if (!STATE.storms.length) {
+    wrap.innerHTML = '<div style="font-size:12px;color:#8b949e;padding:10px;background:rgba(13,20,30,.9);border-radius:8px;">当前无活跃气旋 (或需 HTTPS 授权)</div>';
+    return;
+  }
+  wrap.innerHTML = STATE.storms.map((s, i) => {
+    const info = intensityInfo(s.windKmh, s.isSubtropical);
+    return `<div class="storm-item" data-idx="${i}" style="border-left-color:${info.color}"><div class="name">${s.name} <span style="color:${info.color};font-size:11px;">${s.category || info.short}</span></div><div class="meta">${s.source} · ${s.lat.toFixed(1)}°, ${s.lon.toFixed(1)}°</div><div class="wind">风速 <b>${fmtWind(s.windKmh)}</b></div></div>`;
+  }).join('');
+  wrap.querySelectorAll('.storm-item').forEach(el => {
+    el.onclick = () => {
+      const s = STATE.storms[+el.dataset.idx]; map.flyTo([s.lat, s.lon], 4, { duration: 1.2 });
+      STATE.stormLayers.eachLayer(l => { if (l.getLatLng && Math.abs(l.getLatLng().lat - s.lat) < 0.01 && Math.abs(l.getLatLng().lng - s.lon) < 0.01) l.openPopup(); });
+    };
+  });
+}
+
+// ---------- 历史与定位 ----------
+async function searchHistory() {
+  const name = prompt('输入台风名称或编号（如：DOLPHIN / 2613）：');
+  if (!name) return;
+  setLoading(true);
+  try {
+    const res = await fetch(`https://taifengshuo.com/api/history/search/${encodeURIComponent(name)}`).then(r => r.json());
+    const list = Array.isArray(res) ? res : (res.data || []);
+    if (!list.length) { toast(`未找到与 “${name}” 匹配的历史台风`); }
+    else {
+      list.slice(0, 10).forEach(t => {
+        if (!t.points || !t.points.length) return;
+        const track = t.points.map(p => [p.lat, p.lng]);
+        L.polyline(track, { color: '#d29922', weight: 2, opacity: 0.6, dashArray: '4 6' }).addTo(map)
+          .bindPopup(`<div class="popup-inner"><strong>${t.name || t.enname}</strong><br>编号：${t.code}<br>状态：历史档案</div>`);
+        const latest = t.points[t.points.length - 1];
+        L.circleMarker([latest.lat, latest.lng], { radius: 6, color: '#d29922', weight: 2, fillColor: '#d29922', fillOpacity: 0.4 }).addTo(map);
+      });
+      const allLats = list.flatMap(t => t.points?.map(p => [p.lat, p.lng]) || []);
+      if (allLats.length) map.fitBounds(L.latLngBounds(allLats).pad(0.3));
+      toast(`找到 ${list.length} 条历史记录`);
+    }
+  } catch (e) { toast('历史检索失败 (需 HTTPS)'); }
+  setLoading(false);
+}
+
+async function locate() {
+  const btn = document.getElementById('locateBtn'); btn.textContent = '定位中…';
+  try {
+    const pos = await new Promise((resolve, reject) => { if (!navigator.geolocation) return reject('不支持'); navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 8000 }); });
+    map.flyTo([pos.coords.latitude, pos.coords.longitude], 7, { duration: 1.5 });
+    btn.textContent = '📍 定位';
+  } catch (e) { toast('无法获取位置，请在 HTTPS 环境下运行'); btn.textContent = '📍 定位'; }
+}
+
+async function refreshAll() {
+  const btn = document.getElementById('refreshBtn'); btn.disabled = true; btn.textContent = '刷新中…';
+  await Promise.allSettled([loadStorms(), loadRadarFrames()]);
+  btn.disabled = false; btn.textContent = '⟳ 刷新';
+}
+
+// ---------- 事件绑定 ----------
+document.getElementById('locateBtn').onclick = locate;
+document.getElementById('refreshBtn').onclick = refreshAll;
+document.getElementById('historyBtn').onclick = searchHistory;
+document.getElementById('layersBtn').onclick = () => document.getElementById('layersPanel').classList.toggle('open');
+document.getElementById('legendBtn').onclick = () => document.getElementById('legendPanel').classList.toggle('open');
+document.getElementById('tlPlay').onclick = togglePlay;
+document.getElementById('tlReset').onclick = () => {
+  if (!STATE.radarFrames.length) return;
+  const nowIdx = STATE.radarFrames.findIndex(f => f.type === 'nowcast');
+  const idx = nowIdx > 0 ? nowIdx - 1 : STATE.radarFrames.length - 1;
+  STATE.radarIndex = idx; document.getElementById('timeSlider').value = idx; updateRadarFrame(idx);
+};
+
+document.getElementById('hideUiBtn').onclick = () => { document.getElementById('uiLayer').classList.add('hidden'); document.getElementById('showUiBtn').style.display = 'block'; };
+document.getElementById('showUiBtn').onclick = () => { document.getElementById('uiLayer').classList.remove('hidden'); document.getElementById('showUiBtn').style.display = 'none'; };
+
+function bindLayer(id, key) {
+  document.getElementById(id).onchange = (e) => {
+    const layer = STATE.layers[key]; if (!layer) return;
+    e.target.checked ? layer.addTo(map) : map.removeLayer(layer);
+  };
+}
+bindLayer('radarChk', 'radar'); bindLayer('fireChk', 'fires'); bindLayer('tempChk', 'temperature');
+
+document.getElementById('satChk').onchange = (e) => { STATE.layers.satGlobal[(e.target.checked ? 'addTo' : 'removeFrom')](map); };
+document.getElementById('himawariChk').onchange = (e) => { STATE.layers.himawari[(e.target.checked ? 'addTo' : 'removeFrom')](map); };
+document.getElementById('goesChk').onchange = (e) => { STATE.layers.goes[(e.target.checked ? 'addTo' : 'removeFrom')](map); };
+
+document.getElementById('windChk').onchange = async (e) => {
+  if (e.target.checked) {
+    if (!STATE.layers.wind) {
+      toast('正在加载风场，本地可能失败…');
+      try {
+        const data = await fetch('https://onaci.github.io/leaflet-velocity/demo/data/wind-global.json').then(r => r.json());
+        STATE.layers.wind = L.velocityLayer({ displayValues: true, data: data, maxVelocity: 15, colorScale: ['#3288bd', '#66c2a5', '#abdda4', '#e6f598', '#fee08b', '#fdae61', '#f46d43', '#d53e4f'], opacity: 0.85 });
+      } catch (err) { toast('本地跨域限制，风场加载失败，请上 GitHub 测试'); e.target.checked = false; return; }
+    }
+    STATE.layers.wind.addTo(map);
+  } else if (STATE.layers.wind) {
+    map.removeLayer(STATE.layers.wind);
+  }
+};
+
+document.getElementById('spaghettiChk').onchange = (e) => { if (e.target.checked) STATE.spaghettiLayers.addTo(map); else map.removeLayer(STATE.spaghettiLayers); drawStorms(); };
+document.getElementById('coneChk').onchange = () => drawStorms();
+document.getElementById('trackChk').onchange = () => drawStorms();
+
+map.on('click', () => { document.getElementById('layersPanel').classList.remove('open'); document.getElementById('legendPanel').classList.remove('open'); });
+
+// ---------- 启动 ----------
+(async function init() {
+  setLoading(true);
+  await Promise.allSettled([loadStorms(), loadRadarFrames()]);
+  setLoading(false);
+  STATE.refreshTimer = setInterval(() => { loadStorms(); loadRadarFrames(); }, REFRESH_MS);
+})();
+
+window.addEventListener('beforeunload', () => { clearInterval(STATE.refreshTimer); clearInterval(STATE.playTimer); });
+</script>
+</body>
+</html>
